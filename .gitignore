@@ -35,5 +35,6 @@ config_local.js
 # WebStorm, PhpStorm
 .idea/
 
-# dist
-.dist/
+# dist, .gitignore
+.gitignore
+dist/
