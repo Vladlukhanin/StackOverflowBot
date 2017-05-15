@@ -1,0 +1,48 @@
+{
+  "name": "stackoverflow_tags_trigger-slack",
+  "version": "1.0.0",
+  "description": "StackOverflow tags trigger service for Slack",
+  "main": "index.js",
+  "scripts": {
+    "start": "rimraf ./dist && babel -d ./dist ./src -s",
+    "run": "node index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/soulfly/stackoverflow_tags_trigger-slack.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "BSD-2",
+  "bugs": {
+    "url": "https://github.com/soulfly/stackoverflow_tags_trigger-slack/issues"
+  },
+  "homepage": "https://github.com/soulfly/stackoverflow_tags_trigger-slack",
+  "dependencies": {
+    "babel-core": "*",
+    "babel-preset-env": "*",
+    "babel-preset-latest": "*",
+    "feedparser": "^1.1.6",
+    "node-cron": "^1.1.3",
+    "quickblox": "^2.5.3",
+    "request": "^2.81.0",
+    "rimraf": "*"
+  },
+  "devDependencies": {
+    "babel-cli": "^6.24.1",
+    "babel-register": "*"
+  },
+  "babel": {
+    "presets": [
+      [
+        "env",
+        {
+          "targets": {
+            "node": "current"
+          }
+        }
+      ]
+    ],
+    "plugins": []
+  }
+}
