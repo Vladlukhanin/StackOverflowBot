@@ -131,7 +131,8 @@ export default class QuickBloxService {
 
         if (msg.body.includes('@so ')) {
             let roomJid = QB.chat.helpers.getRoomJidFromDialogId(msg.dialog_id),
-                items = msg.body.trim().replace(',', '').split(' '),
+                items = msg.body.trim().replace(/,/gi, ' ').replace(/ {1,}/g,' ').split(' '),
+                subscription,
                 tags,
                 text;
 
@@ -139,38 +140,58 @@ export default class QuickBloxService {
                 case '/help':
                     text = `Possible commands:
                     @so /help - all commands list;
-                    @so /list - get current tags' list;
                     @so /kick - kick bot from the current group chat;
-                    @so /last - get last information from StackOverfrow;
+                    @so /list - get current tags' list;
+                    @so /subscribe [subscription] - subscribe on main tag.
+                    @so /unsubscribe [subscription] - unsubscribe from main tag;
                     @so /add [tag] - add new tag;
-                    @so /remove [tag] - remove tag.`;
-                    break;
-
-                case '/list':
-                    tags = await qbData.getTags(msg.dialog_id);
-                    text = `Current tags: ${tags.join(', ')}`;
-                    break;
-
-                case '/last':
-                    text = '_';
-                    break;
-
-                case '/add':
-                    tags = await qbData.add(msg.dialog_id, items.splice(2));
-                    text = `Added tags: ${tags.join(', ')}`;
-                    break;
-
-                case '/remove':
-                    tags = await qbData.remove(msg.dialog_id, items.splice(2));
-                    text = `Removed tags: ${tags.join(', ')}`;
+                    @so /remove [tag] - remove tag.
+                    @so /last - get last information from StackOverfrow;`;
                     break;
 
                 case '/kick':
                     self.removeDialog(msg.dialog_id);
                     break;
 
+                case '/list':
+                    const record = await qbData.getRecord(msg.dialog_id);
+                    if (record.subscription) {
+                        text = `Subscribed to "${record.subscription}".\n`;
+                    } else {
+                        text = 'Unsubscribed.\n';
+                    }
+                    text += `Current tags: [ ${record.tags.join(', ')} ]`;
+                    break;
+
+                case '/subscribe':
+                    subscription = await qbData.subscribe(msg.dialog_id, items.splice(2));
+                    text = `Subscribed to "${subscription}"`;
+                    break;
+
+                case '/unsubscribe':
+                    subscription = await qbData.unsubscribe(msg.dialog_id);
+                    if (!subscription) {
+                        text = 'Unsubscribed. Use "@so /subscribe [subscription]" to add new subscription.';
+                    }
+                    break;
+
+                case '/add':
+                    tags = await qbData.add(msg.dialog_id, items.splice(2));
+                    text = `Current tags: [ ${tags.join(', ')} ]`;
+                    break;
+
+                case '/remove':
+                    tags = await qbData.remove(msg.dialog_id, items.splice(2));
+                    text = `Current tags: [ ${tags.join(', ')} ]`;
+                    break;
+
+                case '/last':
+                    qbData.getRecord();
+                    text = '_';
+                    break;
+
                 default:
-                    text = `I don't know what you want. Use "@so /help" to get all commands list.`;
+                    text = 'I don\'t know what you want. Use "@so /help" to get all commands list.';
                     break;
             }
 
@@ -308,21 +329,43 @@ class QBData {
         return await this.updateRecord(dialogId, param);
     }
 
-    async getTags(dialogId) {
-        const record = await this.getRecord(dialogId);
+    async subscribe(dialogId, subscription) {
+        let param = {subscription: subscription};
 
-        return record.tags;
+        return await this.updateRecord(dialogId, param);
+    }
+
+    async unsubscribe(dialogId) {
+        let param = {subscription: ''};
+
+        return await this.updateRecord(dialogId, param);
     }
 
     async getRecord(dialogId) {
-        return new Promise((resolve, reject) => {
-            QB.data.list(this.dataClassName, {
-                'dialogId': dialogId
-            }, (err, res) => {
-                let results = res.items;
+        let param;
 
-                if (res && results.length) {
-                    resolve(results[0]);
+        if (dialogId) {
+            param = {dialogId: dialogId};
+        } else {
+            param = {tags: {nin: null}};
+        }
+        // let param = {tags: {all: tags}};
+        return new Promise((resolve, reject) => {
+            QB.data.list(this.dataClassName, param, (err, res) => {
+                if (res) {
+                    let results = res.items;
+
+                    if (dialogId) {
+                        console.log(results[0]);
+                        resolve(results[0]);
+                    } else {
+                        let sorted = [];
+                        _.each(results, (item) => sorted.push(item.subscription));
+                        console.log('compact >', _.compact(sorted));
+                        console.log('uniq    >', _.uniq(sorted));
+                        console.log('results >', _.chain(sorted).compact().uniq());
+                        resolve(_.chain(sorted).compact().uniq());
+                    }
                 } else {
                     reject(err);
                 }
@@ -334,6 +377,7 @@ class QBData {
         return new Promise((resolve, reject) => {
             QB.data.create(this.dataClassName, {
                 'dialogId': dialogId,
+                'subscription': '',
                 'tags': ''
             }, (err, res) => {
                 if (err) {
@@ -348,15 +392,26 @@ class QBData {
     async updateRecord(dialogId, params) {
         const record = await this.getRecord(dialogId);
 
+        if (!record.tags && params.add_to_set) {
+            params.tags = params.add_to_set.tags;
+            delete params.add_to_set;
+        }
+
         params._id = record._id;
 
         return new Promise((resolve, reject) => {
             QB.data.update(this.dataClassName, params, (err, res) => {
                 if (err) {
+                    console.log(err);
                     reject(err);
                 } else {
-                    console.log(res.tags);
-                    resolve(res.tags);
+                    if (params.subscription) {
+                        console.log(res.subscription);
+                        resolve(res.subscription);
+                    } else {
+                        console.log(res.tags);
+                        resolve(res.tags);
+                    }
                 }
             });
         });
