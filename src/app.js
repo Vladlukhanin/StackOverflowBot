@@ -10,7 +10,7 @@ class App {
     constructor() {
         let self = this;
 
-        self.task = cron.schedule('*/2 * * * *', () => {
+        self.task = cron.schedule('*/10 * * * *', () => {
             self.start();
         },  true);
 
@@ -21,14 +21,14 @@ class App {
         }
     }
 
-    start() {
+    start(tag, params) {
         let self = this;
         console.log('start by cron');
         console.log(CONFIG.stackoverflow.additionalTags);
 
         let feedParser = new FeedparserService();
 
-        feedParser.parse(stackoverflowFeedUrl + CONFIG.stackoverflow.mainTag, (items) => {
+        feedParser.parse(stackoverflowFeedUrl + (tag || CONFIG.stackoverflow.mainTag), (items) => {
                 console.log(`got ${items.length} entries`);
 
                 items.forEach((item, i, arr) => {
@@ -39,13 +39,22 @@ class App {
                         if (quickbloxAPI) {
                             let message = quickbloxAPI.buildMessage(item);
 
-                            quickbloxAPI.fire(message,
-                                () => {
-                                    console.log('Message has pushed to QuickBlox successfully.');
-                                }, (error) => {
-                                    console.error(error);
-                                }
-                            );
+                            if (params) {
+                                QuickBloxService.sendMessage({
+                                    to: params.to,
+                                    type: params.type,
+                                    text: message,
+                                    dialogId: params.dialogId
+                                });
+                            } else {
+                                quickbloxAPI.fire(message,
+                                    () => {
+                                        console.log('Message has pushed to QuickBlox successfully.');
+                                    }, (error) => {
+                                        console.error(error);
+                                    }
+                                );
+                            }
                         }
 
                     }

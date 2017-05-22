@@ -68,7 +68,8 @@ export default class QuickBloxService {
                     if (+item.type === 2) {
                         QB.chat.muc.join(item.xmpp_room_jid, null);
                     } else if (+item.type === 3) {
-                        self.userDialogsAssotiation[item.user_id] = item._id;
+                        let id = QB.chat.helpers.getRecipientId(item.occupants_ids, self.user.id);
+                        self.userDialogsAssotiation[id] = item._id;
                     }
 
                     self.dialogs[item._id] = item;
@@ -133,6 +134,7 @@ export default class QuickBloxService {
             let roomJid = QB.chat.helpers.getRoomJidFromDialogId(msg.dialog_id),
                 items = msg.body.trim().replace(/,/gi, ' ').replace(/ {1,}/g,' ').split(' '),
                 subscription,
+                record,
                 tags,
                 text;
 
@@ -154,7 +156,7 @@ export default class QuickBloxService {
                     break;
 
                 case '/list':
-                    const record = await qbData.getRecord(msg.dialog_id);
+                    record = await qbData.getRecordByDialogId(msg.dialog_id);
                     if (record.subscription) {
                         text = `Subscribed to "${record.subscription}".\n`;
                     } else {
@@ -186,8 +188,9 @@ export default class QuickBloxService {
                     break;
 
                 case '/last':
-                    qbData.getRecord();
-                    text = '_';
+                    record = await qbData.getRecordByDialogId(msg.dialog_id);
+
+                    text = `ALL SUBSCRIPTIONS: [ ${tags.join(', ')} ]`;
                     break;
 
                 default:
@@ -285,6 +288,11 @@ export default class QuickBloxService {
     async installDialog(dialogId) {
         const dialog = await self.getDialogById(dialogId);
 
+        if (+dialog.type === 3) {
+            let id = QB.chat.helpers.getRecipientId(dialog.occupants_ids, self.user.id);
+            this.userDialogsAssotiation[id] = dialog._id;
+        }
+
         return new Promise((resolve, reject) => {
             qbData.createRecord(dialogId).then(
                 success => resolve(dialog),
@@ -341,30 +349,23 @@ class QBData {
         return await this.updateRecord(dialogId, param);
     }
 
-    async getRecord(dialogId) {
-        let param;
-
-        if (dialogId) {
-            param = {dialogId: dialogId};
-        } else {
-            param = {tags: {nin: null}};
-        }
+    async getRecords(params, items = [], skip = 0) {
+        const self = this,
+              limit = 1000;
         // let param = {tags: {all: tags}};
-        return new Promise((resolve, reject) => {
-            QB.data.list(this.dataClassName, param, (err, res) => {
-                if (res) {
-                    let results = res.items;
+        params.limit = limit;
+        params.skip = skip;
 
-                    if (dialogId) {
-                        console.log(results[0]);
-                        resolve(results[0]);
+        return new Promise((resolve, reject) => {
+            QB.data.list(this.dataClassName, params, (err, res) => {
+                if (res) {
+                    let results = items.concat(res.items),
+                        total = limit + skip;
+
+                    if (results.length === total) {
+                        self.getRecords(params, results, total);
                     } else {
-                        let sorted = [];
-                        _.each(results, (item) => sorted.push(item.subscription));
-                        console.log('compact >', _.compact(sorted));
-                        console.log('uniq    >', _.uniq(sorted));
-                        console.log('results >', _.chain(sorted).compact().uniq());
-                        resolve(_.chain(sorted).compact().uniq());
+                        resolve(results);
                     }
                 } else {
                     reject(err);
@@ -373,12 +374,33 @@ class QBData {
         });
     }
 
+    async getRecordByDialogId(dialogId) {
+        const records = await this.getRecords({dialogId: dialogId});
+
+        return records[0];
+    }
+
+    async getSubscriptions() {
+        const records = await this.getRecords({sort_asc: 'created_at'});
+        let items = [];
+
+        _.each(records, (record) => {
+            let item = record.subscription;
+            if (item && (typeof item === 'string')) {
+                item = item.toLowerCase();
+                items.push(item);
+            }
+        });
+
+        return _.uniq(items);
+    }
+
     async createRecord(dialogId) {
         return new Promise((resolve, reject) => {
             QB.data.create(this.dataClassName, {
-                'dialogId': dialogId,
-                'subscription': '',
-                'tags': ''
+                dialogId: dialogId,
+                subscription: '',
+                tags: ''
             }, (err, res) => {
                 if (err) {
                     reject(err);
@@ -390,26 +412,23 @@ class QBData {
     }
 
     async updateRecord(dialogId, params) {
-        const record = await this.getRecord(dialogId);
+        const record = await this.getRecordByDialogId(dialogId);
+
+        params._id = record._id;
 
         if (!record.tags && params.add_to_set) {
             params.tags = params.add_to_set.tags;
             delete params.add_to_set;
         }
 
-        params._id = record._id;
-
         return new Promise((resolve, reject) => {
             QB.data.update(this.dataClassName, params, (err, res) => {
                 if (err) {
-                    console.log(err);
                     reject(err);
                 } else {
                     if (params.subscription) {
-                        console.log(res.subscription);
                         resolve(res.subscription);
                     } else {
-                        console.log(res.tags);
                         resolve(res.tags);
                     }
                 }
@@ -418,7 +437,7 @@ class QBData {
     }
 
     async removeRecord(dialogId) {
-        const record = await this.getRecord(dialogId);
+        const record = await this.getRecordByDialogId(dialogId);
 
         return new Promise((resolve, reject) => {
             QB.data.delete(this.dataClassName, record._id, (err, res) => {
