@@ -8,7 +8,7 @@ export default {
                 mode: 0
             }
         },
-        botUser: {
+        bot: {
             login: 'stackoverflow_bot',
             password: 'qb_stackoverflow_bot'
         }

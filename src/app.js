@@ -1,5 +1,5 @@
 import FeedparserService from './feedparser_service';
-import QuickBloxService from './quickblox_service';
+import QuickBloxService from './QB_modules/quickblox_service';
 import CONFIG from '../config';
 import cron from 'node-cron';
 
