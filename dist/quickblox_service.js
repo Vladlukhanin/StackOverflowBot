@@ -65,4 +65,4 @@ class QuickBloxService {
     }
 }
 exports.default = QuickBloxService;
-//# sourceMappingURL=quickblox_service.js.map
+//# sourceMappingURL=QBChat.js.map

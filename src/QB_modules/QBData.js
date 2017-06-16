@@ -1,16 +1,34 @@
 import QB from 'quickblox';
 
 export default class QBData {
-    constructor() {
-        this.dataClassName = 'StackOverflowBot';
+    constructor(dataClassName) {
+        this.dataClassName = dataClassName;
     }
 
-    async subscribe(params) {
-        return await this.createRecord(params);
+    subscribe(params) {
+        const self = this;
+
+        return new Promise((resolve, reject) => {
+            QB.data.create(self.dataClassName, params, (err, res) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(res);
+                }
+            });
+        });
     }
 
     async unsubscribe(dialogId, tag) {
-        return await this.removeRecordByTag(dialogId, {tag: tag});
+        let result;
+
+        if (tag) {
+            result = await this.removeRecordByTag(dialogId, tag);
+        } else {
+            result = await this.removeRecordsByDialogId(dialogId);
+        }
+
+        return result;
     }
 
     async listRecords(params, items = [], skip = 0) {
@@ -27,7 +45,7 @@ export default class QBData {
                         total = limit + skip;
 
                     if (results.length === total) {
-                        self.getRecords(params, results, total);
+                        self.listRecords(params, results, total);
                     } else {
                         resolve(results);
                     }
@@ -38,81 +56,57 @@ export default class QBData {
         });
     }
 
-    async getRecordsByDialogId(dialogId) {
-        return await this.listRecords({dialogId: dialogId});
-    }
+    getRecordsByDialogId(dialogId) {
+        const self = this;
 
-    async getRecordByTag(dialogId, tag) {
-        const records = await this.getRecordsByDialogId(dialogId);
-
-        let item = null;
-
-        records.forEach((record) => {
-            let itemTag = record.tag;
-
-            if (itemTag && (tag === itemTag)) {
-                item = record;
-            }
-        });
-
-        return item;
-    }
-
-    async getAllRecordsTags() {
-        const records = await this.listRecords({sort_asc: 'created_at'});
-
-        let items = new Set();
-
-        records.forEach((record) => {
-            let item = record.tag;
-
-            if (item && (typeof item === 'string')) {
-                item = item.toLowerCase();
-                items.add(item);
-            }
-        });
-
-        return [...items];
-    }
-
-    async createRecord(params) {
         return new Promise((resolve, reject) => {
-            QB.data.create(this.dataClassName, params, (err, res) => {
-                if (err) {
-                    reject(err);
-                } else {
-                    resolve(res);
+            self.listRecords({dialogId: dialogId}).then(
+                results => resolve(results),
+                error => reject(error)
+            )
+        });
+    }
+
+// async getRecordByTag(dialogId, tag) {
+//     const records = await this.getRecordsByDialogId(dialogId);
+//
+//     let result = null;
+//
+//     records.forEach((record) => {
+//         if (tag === record.tag) {
+//             result = record;
+//         }
+//     });
+//
+//     return result;
+// }
+
+    getAllRecordsTags() {
+        const self = this;
+
+        return new Promise((resolve, reject) => {
+            self.listRecords({sort_asc: 'created_at'}).then(
+                result => resolve(getUniqueTags(result)),
+                error => reject(error)
+            )
+        });
+
+        function getUniqueTags(records) {
+            let items = new Set();
+
+            records.forEach((record) => {
+                let item = record.tag;
+
+                if (item && (typeof item === 'string')) {
+                    items.add(item);
                 }
             });
-        });
-    }
 
-    async updateRecord(dialogId, params) {
-        const record = await this.getRecordsByDialogId(dialogId);
-
-        params._id = record._id;
-
-        if (!record.tags && params.add_to_set) {
-            params.tags = params.add_to_set.tags;
-            delete params.add_to_set;
+            return [...items];
         }
-
-        return new Promise((resolve, reject) => {
-            QB.data.update(this.dataClassName, params, (err, res) => {
-                if (err) {
-                    reject(err);
-                } else {
-                    if (params.subscription) {
-                        resolve(res.subscription);
-                    } else {
-                        resolve(res.tags);
-                    }
-                }
-            });
-        });
     }
 
-    static async removeRecords(params) {
+    async removeRecords(params) {
         return new Promise((resolve, reject) => {
             QB.data.delete(this.dataClassName, params, (err, res) => {
                 if (err) {
@@ -125,7 +119,15 @@ export default class QBData {
     }
 
     async removeRecordsByDialogId(dialogId) {
-        return await this.removeRecords({dialogId: dialogId});
+        const records = await this.getRecordsByDialogId(dialogId);
+
+        let _ids = [];
+
+        records.forEach((record) => {
+            _ids.push(record._id);
+        });
+
+        return await this.removeRecords(_ids);
     }
 
     async removeRecordByTag(dialogId, tag) {

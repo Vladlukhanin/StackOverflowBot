@@ -1,4 +1,5 @@
 import QB from 'quickblox';
+import QBChat from './QBChat';
 
 export default class QBDialog {
     constructor(selfUserId) {
@@ -26,6 +27,7 @@ export default class QBDialog {
                         QB.chat.muc.join(item.xmpp_room_jid, null);
                     } else if (+item.type === 3) {
                         let id = QB.chat.helpers.getRecipientId(item.occupants_ids, self.userId);
+
                         self.userDialogsAssotiation[id] = item._id;
                     }
                 });
@@ -37,7 +39,7 @@ export default class QBDialog {
         });
     }
 
-    async get(dialogId) {
+    get(dialogId) {
         return new Promise((resolve, reject) => {
             QB.chat.dialog.list({
                 '_id': dialogId
@@ -51,26 +53,83 @@ export default class QBDialog {
         });
     }
 
-    async remove(dialogId) {
-        return new Promise((resolve, reject) => {
-            QB.chat.dialog.delete([dialogId], (err, res) => {
-                if (err) {
-                    reject(err);
-                } else {
-                    resolve(res);
-                }
+    remove(dialogId) {
+        this.get(dialogId).then(
+            result => sayGoodbyeAndRemove.call(this, result)
+        );
+
+        function sayGoodbyeAndRemove(dialog) {
+            if (+dialog.type === 2) {
+                QBChat.sendMessage({
+                    to: dialog.xmpp_room_jid,
+                    type: 'groupchat',
+                    text: 'Notification message',
+                    dialogId: dialogId,
+                    notification_type: '2',
+                    current_occupant_ids: dialog.occupants_ids.join(),
+                    deleted_occupant_ids: this.userId,
+                    dialog_update_info: 3
+                });
+            } else if (+dialog.type === 3) {
+                QBChat.sendMessage({
+                    to: id,
+                    type: 'chat',
+                    text: 'Contact request',
+                    dialogId: dialogId,
+                    notification_type: '7'
+                });
+            }
+
+            return new Promise((resolve, reject) => {
+                QB.chat.dialog.delete([dialogId], (err, res) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve(res);
+                    }
+                });
             });
-        });
+        }
     }
 
-    async install(dialogId) {
-        const dialog = await self.get(dialogId);
+    install(dialogId) {
+        this.get(dialogId).then(
+            result => sayHello.call(this, result)
+        );
 
-        if (+dialog.type === 3) {
-            let id = QB.chat.helpers.getRecipientId(dialog.occupants_ids, self.user.id);
-            this.userDialogsAssotiation[id] = dialog._id;
+        function sayHello(dialog) {
+            console.log(dialog);
+            if (+dialog.type === 3) {
+                let id = QB.chat.helpers.getRecipientId(dialog.occupants_ids, this.userId);
+
+                this.userDialogsAssotiation[id] = dialog._id;
+
+                QBChat.sendMessage({
+                    to: id,
+                    type: 'chat',
+                    text: 'Contact request',
+                    dialogId: dialogId,
+                    notification_type: '5'
+                });
+
+                QBChat.sendMessage({
+                    to: id,
+                    type: 'chat',
+                    text: 'Hello! Use "@so /help" to get all commands list.',
+                    dialogId: dialogId
+                });
+            } else if (+dialog.type === 2) {
+                const roomJid = dialog.xmpp_room_jid;
+
+                QB.chat.muc.join(roomJid, () => {
+                    QBChat.sendMessage({
+                        to: roomJid,
+                        type: 'groupchat',
+                        text: 'Hello everybody! Use "@so /help" to get all commands list.',
+                        dialogId: dialogId
+                    });
+                });
+            }
         }
-
-        return dialog;
     }
 }

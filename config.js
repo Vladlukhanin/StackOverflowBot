@@ -9,12 +9,10 @@ export default {
             }
         },
         bot: {
+            id: 27285539,
             login: 'stackoverflow_bot',
             password: 'qb_stackoverflow_bot'
-        }
-    },
-    stackoverflow: {
-        mainTag: 'quickblox',
-        additionalTags: ['javascript', 'android', 'ios']
-    },
+        },
+        dataClassName: 'StackOverflowBot'
+    }
 };

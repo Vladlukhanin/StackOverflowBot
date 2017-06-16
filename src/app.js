@@ -1,21 +1,19 @@
 import FeedparserService from './feedparser_service';
-import QuickBloxService from './QB_modules/quickblox_service';
+import QBChat from './QB_modules/QBChat';
 import CONFIG from '../config';
 import cron from 'node-cron';
 
 const stackoverflowFeedUrl = "http://stackoverflow.com/feeds/tag/";
-const quickbloxAPI = new QuickBloxService();
+const qbChat = new QBChat();
 
 class App {
     constructor() {
-        let self = this;
-
-        self.task = cron.schedule('*/10 * * * *', () => {
-            self.start();
+        this.task = cron.schedule('*/10 * * * *', () => {
+            this.start();
         },  true);
 
         try {
-            self.task.start();
+            this.task.start();
         } catch(error) {
             console.log(`cron pattern not valid: ${error}`);
         }
@@ -36,18 +34,18 @@ class App {
                         console.log(`New Entry found. Date: ${item.date}. Title: ${item.title}`);
 
                         // notify QuickBlox
-                        if (quickbloxAPI) {
-                            let message = quickbloxAPI.buildMessage(item);
+                        if (qbChat) {
+                            let message = qbChat.buildMessage(item);
 
                             if (params) {
-                                QuickBloxService.sendMessage({
+                                QBChat.sendMessage({
                                     to: params.to,
                                     type: params.type,
                                     text: message,
                                     dialogId: params.dialogId
                                 });
                             } else {
-                                quickbloxAPI.fire(message,
+                                qbChat.fire(message,
                                     () => {
                                         console.log('Message has pushed to QuickBlox successfully.');
                                     }, (error) => {
