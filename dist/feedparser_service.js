@@ -24,20 +24,24 @@ class FeedparserService {
 
         console.log(`quering url: ${url}`);
 
-        let req = (0, _request2.default)({ headers: { "user-agent": "node.js" }, uri: url }),
-            feedparser = new _feedparser2.default([]);
+        let req = (0, _request2.default)({
+            headers: { "user-agent": "node.js" },
+            uri: url
+        });
+
+        let feedparser = new _feedparser2.default([]);
 
         req.on('error', error => {
             errorCallback(error);
         });
 
         req.on('response', res => {
-            let stream = this;
+            let stream = res;
 
             console.log("res.statusCode: " + res.statusCode);
             console.log("res.statusMessage: " + res.statusMessage);
 
-            if (res.statusCode != 200) {
+            if (res.statusCode !== 200) {
                 return this.emit('error', new Error(res.statusCode + " " + res.statusMessage));
             }
 
@@ -50,8 +54,8 @@ class FeedparserService {
 
         feedparser.on('readable', () => {
             // This is where the action is!
-            let stream = this,
-                meta = this.meta,
+            let stream = feedparser,
+                meta = stream.meta,
                 // **NOTE** the "meta" is always available in the context of the feedparser instance
             item;
 

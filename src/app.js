@@ -1,92 +1,69 @@
-import FeedparserService from './feedparser_service';
+import stackexchange from 'stackexchange';
 import QBChat from './QB_modules/QBChat';
-import CONFIG from '../config';
 import cron from 'node-cron';
+import CONFIG from '../config';
 
-const stackoverflowFeedUrl = "http://stackoverflow.com/feeds/tag/";
 const qbChat = new QBChat();
+const stackoverflow = new stackexchange({version: 2.2});
 
 class App {
     constructor() {
-        this.task = cron.schedule('*/10 * * * *', () => {
-            this.start();
+        this.startTask();
+
+        cron.schedule(`*/${CONFIG.taskRepeatTime} * * * *`, () => {
+            this.startTask();
         },  true);
-
-        try {
-            this.task.start();
-        } catch(error) {
-            console.log(`cron pattern not valid: ${error}`);
-        }
     }
 
-    start(tag, params) {
-        let self = this;
-        console.log('start by cron');
-        console.log(CONFIG.stackoverflow.additionalTags);
+    startTask() {
+        this.listPosts()
+            .then(posts => {
+                posts.forEach(post => {
+                    // console.log('tags: ', post.tags);
+                })
+            })
+            .catch(error => {
+                console.log('error: ', error);
+            });
+    }
 
-        let feedParser = new FeedparserService();
+    listPosts(params = {}) {
+        const time = Math.floor(Date.now() / 1000) - (CONFIG.taskRepeatTime * 60),
+              results = params.posts || [];
 
-        feedParser.parse(stackoverflowFeedUrl + (tag || CONFIG.stackoverflow.mainTag), (items) => {
-                console.log(`got ${items.length} entries`);
+        return new Promise((resolve, reject) => {
+            let filters = {
+                key: CONFIG.stackoverflow.key,
+                page: params.page || 1,
+                pagesize: CONFIG.stackoverflow.pagesize,
+                fromdate: params.time || time,
+                tagged: params.tag || 'javascript',
+                sort: 'activity',
+                order: 'desc'
+            };
 
-                items.forEach((item, i, arr) => {
-                    if (self.isNewEntry(item) && self.isNeededTags(item)) {
-                        console.log(`New Entry found. Date: ${item.date}. Title: ${item.title}`);
+            stackoverflow.questions.questions(filters, (err, res) => {
+                if (res) {
+                    let posts = results.concat(res.items);
 
-                        // notify QuickBlox
-                        if (qbChat) {
-                            let message = qbChat.buildMessage(item);
-
-                            if (params) {
-                                QBChat.sendMessage({
-                                    to: params.to,
-                                    type: params.type,
-                                    text: message,
-                                    dialogId: params.dialogId
-                                });
-                            } else {
-                                qbChat.fire(message,
-                                    () => {
-                                        console.log('Message has pushed to QuickBlox successfully.');
-                                    }, (error) => {
-                                        console.error(error);
-                                    }
-                                );
-                            }
-                        }
-
+                    if (res.has_more) {
+                        this.listPosts({
+                            fromdate: filters.fromdate,
+                            page: ++filters.page,
+                            posts: posts
+                        })
+                            .then(result => resolve(result))
+                            .catch(error => reject(error));
+                    } else {
+                        resolve(posts);
                     }
-                });
-
-            }, function(error) {
-                console.error(error);
-            }
-        );
-    }
-
-    isNewEntry(entry) {
-        let entryTimestamp = entry.date.getTime(),
-            currentTimestamp = Date.now();
-
-        return (currentTimestamp - entryTimestamp) <= (60 * 24 * 360 * 1000);
-    }
-
-    isNeededTags(entry) {
-        for (let i = 0; i < entry.categories.length; i++){
-            let entryTag = entry.categories[i];
-
-            for(let j = 0; j < CONFIG.stackoverflow.additionalTags.length; j++){
-                let tagToCheck = CONFIG.stackoverflow.additionalTags[j];
-
-                if (entryTag === tagToCheck) {
-                    return true;
+                } else {
+                    reject(err);
                 }
-            }
-
-        }
-
-        return false;
+            });
+        });
     }
+
 }
 
 new App();

@@ -6,10 +6,8 @@ export default class QBData {
     }
 
     subscribe(params) {
-        const self = this;
-
         return new Promise((resolve, reject) => {
-            QB.data.create(self.dataClassName, params, (err, res) => {
+            QB.data.create(this.dataClassName, params, (err, res) => {
                 if (err) {
                     reject(err);
                 } else {
@@ -19,21 +17,35 @@ export default class QBData {
         });
     }
 
-    async unsubscribe(dialogId, tag) {
-        let result;
+    unsubscribe(dialogId, params) {
+        return new Promise((resolve, reject) => {
+            if (dialogId && (params.toLowerCase() === 'all')) {
+                this.getRecordsByDialogId(dialogId)
+                    .then(records => {
+                        let _ids = [];
 
-        if (tag) {
-            result = await this.removeRecordByTag(dialogId, tag);
-        } else {
-            result = await this.removeRecordsByDialogId(dialogId);
-        }
+                        records.forEach(record => {
+                            _ids.push(record._id)
+                        });
 
-        return result;
+                        this.removeRecords(_ids);
+                    })
+                    .then(result => {
+                        resolve(result);
+                    })
+                    .catch(error => {
+                        reject(error);
+                    });
+            } else {
+                this.removeRecords(params)
+                    .then(results => resolve(results))
+                    .catch(error => reject(error));
+            }
+        });
     }
 
-    async listRecords(params, items = [], skip = 0) {
-        const self = this,
-              limit = 1000;
+    listRecords(params, items = [], skip = 0) {
+        const limit = 1000;
 
         params.limit = limit;
         params.skip = skip;
@@ -45,7 +57,9 @@ export default class QBData {
                         total = limit + skip;
 
                     if (results.length === total) {
-                        self.listRecords(params, results, total);
+                        this.listRecords(params, results, total)
+                            .then(results => resolve(results))
+                            .catch(error => reject(error));
                     } else {
                         resolve(results);
                     }
@@ -57,38 +71,18 @@ export default class QBData {
     }
 
     getRecordsByDialogId(dialogId) {
-        const self = this;
-
         return new Promise((resolve, reject) => {
-            self.listRecords({dialogId: dialogId}).then(
-                results => resolve(results),
-                error => reject(error)
-            )
+            this.listRecords({dialogId: dialogId})
+                .then(results => resolve(results))
+                .catch(error => reject(error));
         });
     }
 
-// async getRecordByTag(dialogId, tag) {
-//     const records = await this.getRecordsByDialogId(dialogId);
-//
-//     let result = null;
-//
-//     records.forEach((record) => {
-//         if (tag === record.tag) {
-//             result = record;
-//         }
-//     });
-//
-//     return result;
-// }
-
     getAllRecordsTags() {
-        const self = this;
-
         return new Promise((resolve, reject) => {
-            self.listRecords({sort_asc: 'created_at'}).then(
-                result => resolve(getUniqueTags(result)),
-                error => reject(error)
-            )
+            this.listRecords({sort_asc: 'created_at'})
+                .then(result => resolve(getUniqueTags(result)))
+                .catch(error => reject(error));
         });
 
         function getUniqueTags(records) {
@@ -96,7 +90,6 @@ export default class QBData {
 
             records.forEach((record) => {
                 let item = record.tag;
-
                 if (item && (typeof item === 'string')) {
                     items.add(item);
                 }
@@ -106,7 +99,7 @@ export default class QBData {
         }
     }
 
-    async removeRecords(params) {
+    removeRecords(params) {
         return new Promise((resolve, reject) => {
             QB.data.delete(this.dataClassName, params, (err, res) => {
                 if (err) {
@@ -116,23 +109,5 @@ export default class QBData {
                 }
             });
         });
-    }
-
-    async removeRecordsByDialogId(dialogId) {
-        const records = await this.getRecordsByDialogId(dialogId);
-
-        let _ids = [];
-
-        records.forEach((record) => {
-            _ids.push(record._id);
-        });
-
-        return await this.removeRecords(_ids);
-    }
-
-    async removeRecordByTag(dialogId, tag) {
-        const record = await this.getRecordByTag(dialogId, tag);
-
-        return await this.removeRecords(record._id);
     }
 }

@@ -1,95 +1,127 @@
 'use strict';
 
-var _feedparser_service = require('./feedparser_service');
+var _QBChat = require('./QB_modules/QBChat');
 
-var _feedparser_service2 = _interopRequireDefault(_feedparser_service);
+var _QBChat2 = _interopRequireDefault(_QBChat);
 
-var _quickblox_service = require('./quickblox_service');
+var _nodeCron = require('node-cron');
 
-var _quickblox_service2 = _interopRequireDefault(_quickblox_service);
+var _nodeCron2 = _interopRequireDefault(_nodeCron);
 
-var _config = require('../config');
+var _stackexchange = require('stackexchange');
 
-var _config2 = _interopRequireDefault(_config);
-
-var _cron = require('cron');
-
-var _cron2 = _interopRequireDefault(_cron);
+var _stackexchange2 = _interopRequireDefault(_stackexchange);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-const stackoverflowFeedUrl = "http://stackoverflow.com/feeds/tag/";
-const quickbloxAPI = new _quickblox_service2.default();
+// const stackoverflowFeedUrl = "http://stackoverflow.com/feeds/tag/";
+
+// import CONFIG from '../config';
+const qbChat = new _QBChat2.default(); // import FeedparserService from './feedparser_service';
+
+const stackoverflowAPI = new _stackexchange2.default({ version: 2.2 });
 
 class App {
     constructor() {
-        let self = this;
-
         try {
-            new _cron2.default.CronJob('*/5 * * * *', () => {
-                self.start();
-            }, null, true, 'America/Los_Angeles');
-        } catch (ex) {
-            console.log(`cron pattern not valid: ${ex}`);
+            console.log(qbChat);
+            this.task.start();
+        } catch (error) {
+            console.log(`cron pattern not valid: ${error}`);
         }
+    }
+
+    task() {
+        _nodeCron2.default.schedule('*/1 * * * *', () => {
+            this.start();
+        }, true);
     }
 
     start() {
-        let self = this;
+        const filter = {
+            key: 'heKdt7ZTr9pm1kqirZ6OPg((',
+            pagesize: 1,
+            tagged: 'quickblox',
+            sort: 'activity',
+            order: 'asc'
+        };
 
-        console.log('start by cron');
-        console.log(_config2.default.stackoverflow.additionalTags);
+        stackoverflowAPI.questions.questions(filter, function (err, results) {
+            if (err) throw err;
 
-        let feedParser = new _feedparser_service2.default();
-
-        feedParser.parse(stackoverflowFeedUrl + _config2.default.stackoverflow.mainTag, function (entries) {
-            console.log(`got ${entries.length} entries`);
-
-            entries.forEach(function (entry, i, arr) {
-                let isNew = self.isNewEntry(entry);
-
-                if (isNew && self.isEntryHasNeededTags(entry)) {
-                    console.log(`New Entry found. Date: ${entry.date}. Title: ${entry.title}`);
-
-                    // notify QuickBlox
-                    if (quickbloxAPI) {
-                        let message = quickbloxAPI.buildMessage(entry);
-
-                        quickbloxAPI.fire(message, () => {
-                            console.log('Message has pushed to QuickBlox successfully.');
-                        }, error => {
-                            console.error(error);
-                        });
-                    }
-                }
-            });
-        }, function (error) {
-            console.error(error);
+            console.log(results.items);
+            console.log(results.has_more);
         });
     }
 
-    isNewEntry(entry) {
-        let entryTimestamp = entry.date.getTime(),
-            currentTimestamp = Date.now();
-
-        return currentTimestamp - entryTimestamp <= 300 * 1000;
-    }
-
-    isEntryHasNeededTags(entry) {
-        for (let i = 0; i < entry.categories.length; i++) {
-            let entryTag = entry.categories[i];
-
-            for (let j = 0; j < _config2.default.stackoverflow.additionalTags.length; j++) {
-                let tagToCheck = _config2.default.stackoverflow.additionalTags[j];
-
-                if (entryTag == tagToCheck) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
+    // start(tag, params) {
+    //     let self = this;
+    //     console.log('start by cron');
+    //     console.log(CONFIG.stackoverflow.additionalTags);
+    //
+    //     let feedParser = new FeedparserService();
+    //
+    //     feedParser.parse(stackoverflowFeedUrl + (tag || CONFIG.stackoverflow.mainTag), (items) => {
+    //             console.log(`got ${items.length} entries`);
+    //
+    //             items.forEach((item, i, arr) => {
+    //                 if (self.isNewEntry(item) && self.isNeededTags(item)) {
+    //                     console.log(`New Entry found. Date: ${item.date}. Title: ${item.title}`);
+    //
+    //                     // notify QuickBlox
+    //                     if (qbChat) {
+    //                         let message = qbChat.buildMessage(item);
+    //
+    //                         if (params) {
+    //                             QBChat.sendMessage({
+    //                                 to: params.to,
+    //                                 type: params.type,
+    //                                 text: message,
+    //                                 dialogId: params.dialogId
+    //                             });
+    //                         } else {
+    //                             qbChat.fire(message,
+    //                                 () => {
+    //                                     console.log('Message has pushed to QuickBlox successfully.');
+    //                                 }, (error) => {
+    //                                     console.error(error);
+    //                                 }
+    //                             );
+    //                         }
+    //                     }
+    //
+    //                 }
+    //             });
+    //
+    //         }, function(error) {
+    //             console.error(error);
+    //         }
+    //     );
+    // }
+    //
+    // isNewEntry(entry) {
+    //     let entryTimestamp = entry.date.getTime(),
+    //         currentTimestamp = Date.now();
+    //
+    //     return (currentTimestamp - entryTimestamp) <= (60 * 24 * 360 * 1000);
+    // }
+    //
+    // isNeededTags(entry) {
+    //     for (let i = 0; i < entry.categories.length; i++){
+    //         let entryTag = entry.categories[i];
+    //
+    //         for(let j = 0; j < CONFIG.stackoverflow.additionalTags.length; j++){
+    //             let tagToCheck = CONFIG.stackoverflow.additionalTags[j];
+    //
+    //             if (entryTag === tagToCheck) {
+    //                 return true;
+    //             }
+    //         }
+    //
+    //     }
+    //
+    //     return false;
+    // }
 }
 
 new App();

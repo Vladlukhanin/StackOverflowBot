@@ -5,13 +5,12 @@ export default class QBDialog {
     constructor(selfUserId) {
         this.userId = selfUserId;
         this.userDialogsAssotiation = {};
+        this.recipientJid = {};
 
         this.list();
     }
 
     list(skip) {
-        const self = this;
-
         QB.chat.dialog.list({
             'sort_desc': 'last_message_date_sent',
             'skip': skip || 0
@@ -24,26 +23,27 @@ export default class QBDialog {
 
                 result.items.forEach((item) => {
                     if (+item.type === 2) {
-                        QB.chat.muc.join(item.xmpp_room_jid, null);
+                        QB.chat.muc.join(item.xmpp_room_jid, () => {
+                            this.setRecipientJid(item._id, item.xmpp_room_jid);
+                        });
                     } else if (+item.type === 3) {
-                        let id = QB.chat.helpers.getRecipientId(item.occupants_ids, self.userId);
+                        let id = QB.chat.helpers.getRecipientId(item.occupants_ids, this.userId);
 
-                        self.userDialogsAssotiation[id] = item._id;
+                        this.setRecipientJid(item._id, id);
+                        this.setUserDialogsAssotiation(id, item._id);
                     }
                 });
 
                 if (totalEntries > localEntries) {
-                    self.list(localEntries);
+                    this.list(localEntries);
                 }
             }
         });
     }
 
-    get(dialogId) {
+    get(params) {
         return new Promise((resolve, reject) => {
-            QB.chat.dialog.list({
-                '_id': dialogId
-            }, (err, res) => {
+            QB.chat.dialog.list(params, (err, res) => {
                 if (err) {
                     reject(err);
                 } else {
@@ -53,83 +53,131 @@ export default class QBDialog {
         });
     }
 
-    remove(dialogId) {
-        this.get(dialogId).then(
-            result => sayGoodbyeAndRemove.call(this, result)
-        );
-
+    remove(params) {
         function sayGoodbyeAndRemove(dialog) {
-            if (+dialog.type === 2) {
-                QBChat.sendMessage({
-                    to: dialog.xmpp_room_jid,
-                    type: 'groupchat',
-                    text: 'Notification message',
-                    dialogId: dialogId,
-                    notification_type: '2',
-                    current_occupant_ids: dialog.occupants_ids.join(),
-                    deleted_occupant_ids: this.userId,
-                    dialog_update_info: 3
-                });
-            } else if (+dialog.type === 3) {
-                QBChat.sendMessage({
-                    to: id,
-                    type: 'chat',
-                    text: 'Contact request',
-                    dialogId: dialogId,
-                    notification_type: '7'
-                });
-            }
-
             return new Promise((resolve, reject) => {
-                QB.chat.dialog.delete([dialogId], (err, res) => {
-                    if (err) {
-                        reject(err);
+                if (+dialog.type === 2) {
+                    QBChat.sendMessage({
+                        to: this.getRecipientJid(dialog._id),
+                        type: 'groupchat',
+                        text: 'Notification message',
+                        dialogId: dialog._id,
+                        notification_type: '2',
+                        current_occupant_ids: dialog.occupants_ids.join(),
+                        deleted_occupant_ids: this.userId,
+                        dialog_update_info: 3
+                    });
+                } else if (+dialog.type === 3) {
+                    const id = QB.chat.helpers.getRecipientId(dialog.occupants_ids, this.userId);
+
+                    QBChat.sendMessage({
+                        to: this.getRecipientJid(dialog._id),
+                        type: 'chat',
+                        text: 'Contact request',
+                        dialogId: dialog._id,
+                        notification_type: '7'
+                    });
+
+                    this.deleteUserDialogsAssotiation(id);
+                }
+
+                this.deleteRecipientJid(dialog._id);
+
+                QB.chat.dialog.delete(dialog._id, (err, res) => {
+                    if (res) {
+                        resolve(dialog._id);
                     } else {
-                        resolve(res);
+                        reject(err);
                     }
                 });
             });
         }
+
+        return new Promise((resolve, reject) => {
+            this.get(params)
+                .then(result => {
+                    sayGoodbyeAndRemove.call(this, result);
+                })
+                .then(id => {
+                    console.log('sayGoodbyeAndRemove id', id);
+                    resolve(id)
+                })
+                .catch(error => {
+                    console.log('sayGoodbyeAndRemove error', error);
+                    reject(error)
+                });
+        });
     }
 
-    install(dialogId) {
-        this.get(dialogId).then(
+    install(params) {
+        this.get(params).then(
             result => sayHello.call(this, result)
         );
 
         function sayHello(dialog) {
-            console.log(dialog);
             if (+dialog.type === 3) {
-                let id = QB.chat.helpers.getRecipientId(dialog.occupants_ids, this.userId);
-
-                this.userDialogsAssotiation[id] = dialog._id;
+                const id = QB.chat.helpers.getRecipientId(dialog.occupants_ids, this.userId);
+                this.setRecipientJid(dialog._id, id);
 
                 QBChat.sendMessage({
-                    to: id,
+                    to: this.getRecipientJid(dialog._id),
                     type: 'chat',
                     text: 'Contact request',
-                    dialogId: dialogId,
+                    dialogId: dialog._id,
                     notification_type: '5'
                 });
 
                 QBChat.sendMessage({
-                    to: id,
+                    to: this.getRecipientJid(dialog._id),
                     type: 'chat',
                     text: 'Hello! Use "@so /help" to get all commands list.',
-                    dialogId: dialogId
+                    dialogId: dialog._id
                 });
             } else if (+dialog.type === 2) {
-                const roomJid = dialog.xmpp_room_jid;
-
-                QB.chat.muc.join(roomJid, () => {
+                QB.chat.muc.join(this.getRecipientJid(dialog._id), () => {
                     QBChat.sendMessage({
-                        to: roomJid,
+                        to: this.getRecipientJid(dialog._id),
                         type: 'groupchat',
                         text: 'Hello everybody! Use "@so /help" to get all commands list.',
-                        dialogId: dialogId
+                        dialogId: dialog._id
                     });
                 });
             }
         }
+    }
+
+    setUserDialogsAssotiation(id, dialogId) {
+        this.userDialogsAssotiation[id] = dialogId;
+    }
+
+    getUserDialogsAssotiation(id) {
+        return this.userDialogsAssotiation[id];
+    }
+
+    deleteUserDialogsAssotiation(id) {
+        delete this.userDialogsAssotiation[id];
+    }
+
+    setRecipientJid(dialogId, jidOrId) {
+        switch (typeof jidOrId) {
+            case 'number':
+                this.recipientJid[dialogId] = QB.chat.helpers.getUserJid(jidOrId, null);
+                break;
+
+            case 'string':
+                this.recipientJid[dialogId] = jidOrId;
+                break;
+
+            default:
+                return false;
+        }
+    }
+
+    getRecipientJid(dialogId) {
+        return this.recipientJid[dialogId];
+    }
+
+    deleteRecipientJid(dialogId) {
+        delete this.recipientJid[dialogId];
     }
 }

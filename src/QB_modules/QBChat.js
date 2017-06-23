@@ -5,9 +5,7 @@ import CONFIG from '../../config';
 
 export default class QBChat {
     constructor() {
-        const self = this;
-
-        self.user = {
+        this.user = {
             login: CONFIG.quickblox.bot.login,
             password: CONFIG.quickblox.bot.password,
             id: CONFIG.quickblox.bot.id,
@@ -21,33 +19,38 @@ export default class QBChat {
             CONFIG.quickblox.config
         );
 
-        self.connect((error, result) => {
-            if (result) {
-                self.qbData = new QBData(CONFIG.quickblox.dataClassName);
-                self.qbDialog = new QBDialog(self.user.id);
+        this.connect()
+            .then(result => {
+                this.qbData = new QBData(CONFIG.quickblox.dataClassName);
+                this.qbDialog = new QBDialog(this.user.id);
 
-                self.qbListeners();
-            }
-        });
+                this.qbListeners();
+            });
     }
 
-    connect(callback) {
-        const self = this;
+    connect() {
+        return new Promise((resolve, reject) => {
+            QB.createSession({
+                'login': this.user.login,
+                'password': this.user.password
+            }, (error, session) => {
+                if (session) {
+                    this.user.token = session.token;
 
-        QB.createSession({
-            'login': self.user.login,
-            'password': self.user.password
-        }, (error, session) => {
-            if (session) {
-                self.user.token = session.token;
-
-                QB.chat.connect({
-                    'userId': self.user.id,
-                    'password': self.user.token
-                }, (err, result) => {
-                    callback(err, result);
-                });
-            }
+                    QB.chat.connect({
+                        'userId': this.user.id,
+                        'password': this.user.token
+                    }, (err, result) => {
+                        if (err) {
+                            reject(err);
+                        } else {
+                            resolve(result);
+                        }
+                    });
+                } else {
+                    reject(error);
+                }
+            });
         });
     }
 
@@ -93,8 +96,12 @@ export default class QBChat {
             return false;
         }
 
+        if ( (msg.type === 'chat') && (!this.qbDialog.setUserDialogsAssotiation(id)) ) {
+            this.qbDialog.setUserDialogsAssotiation(id, msg.dialog_id);
+        }
+
         if (msg.body.includes('@so ')) {
-            const answer = this.answerManager(id, msg);
+            const answer = this.answerManager(msg);
 
             switch (answer.items[1]) {
                 case '/help':
@@ -136,7 +143,7 @@ export default class QBChat {
             return false;
         }
 
-        this.qbDialog.install(dialogId);
+        this.qbDialog.install({'_id': dialogId});
     }
 
     onSubscribe(id) {
@@ -148,15 +155,22 @@ export default class QBChat {
     }
 
     answerToContact(id, type) {
-        const dialogId = this.qbDialog.userDialogsAssotiation[id];
+        const dialogId = this.qbDialog.setUserDialogsAssotiation(id),
+            params = dialogId ? {'_id': dialogId} : {
+                'occupants_ids': { all: [id, this.user.id] },
+                'type': 3
+            };
 
         switch (type) {
             case '5':
-                this.qbDialog.install(dialogId);
+                this.qbDialog.install(params);
                 break;
 
             case '7':
-                this.qbDialog.remove(dialogId);
+                this.qbDialog.remove(params).then(dialogId => {
+                    console.log(dialogId);
+                    this.qbData.unsubscribe(dialogId, 'all')
+                });
                 break;
 
             default:
@@ -172,8 +186,8 @@ export default class QBChat {
 
     }
 
-    answerManager(id, msg) {
-        const roomJid = QB.chat.helpers.getRoomJidFromDialogId(msg.dialog_id),
+    answerManager(msg) {
+        const self = this,
             items = msg.body.trim()
                             .replace(/,/gi, ' ')
                             .replace(/ {1,}/g,' ')
@@ -184,7 +198,7 @@ export default class QBChat {
 
             sendResponse(text) {
                 QBChat.sendMessage({
-                    to: msg.type === 'chat' ? id : roomJid,
+                    to: self.qbDialog.getRecipientJid(msg.dialog_id),
                     type: msg.type,
                     text: text,
                     dialogId: msg.dialog_id
@@ -205,12 +219,13 @@ export default class QBChat {
             sendResponseToList() {
                 self.qbData.getRecordsByDialogId(msg.dialog_id).then(
                     results => sendAvailableRecords.call(this, results),
-                    error => sendErrorInfo(error)
+                    error => sendErrorInfo.call(this, error)
                 );
 
                 function sendAvailableRecords(records) {
                     if (!records.length) {
-                        sendErrorInfo({code: 404});
+                        sendErrorInfo.call(this, {code: 404});
+                        
                         return false;
                     }
 
@@ -232,11 +247,11 @@ export default class QBChat {
                     this.sendResponse(text);
                 }
 
-                function sendErrorInfo(e) {
-                    if (e.code === 404) {
+                function sendErrorInfo(err) {
+                    if (err.code === 404) {
                         this.sendResponse('Not subscribed.');
                     } else {
-                        this.sendFailInfo(error);
+                        this.sendFailInfo(err);
                     }
                 }
             },
@@ -247,7 +262,7 @@ export default class QBChat {
                     @so /kick - kick bot from the current group chat;
                     @so /list - get current tags' list;
                     @so /subscribe <subscription> <...filters> - subscribe on main tag.
-                    @so /unsubscribe <subscription> - unsubscribe from main tag;
+                    @so /unsubscribe <...IDs> - unsubscribe from main tag;
                     @so /last - get last information from StackOverfrow;`;
 
                 this.sendResponse(text);
@@ -258,8 +273,7 @@ export default class QBChat {
                     this.sendResponse('Command "@so /kick" uses only in group chat');
                 } else {
                     this.sendResponse('Goodbye! Have a good day!');
-
-                    self.qbDialog.remove(msg.dialog_id);
+                    self.qbDialog.remove({'_id': msg.dialog_id});
                 }
             },
 
@@ -268,28 +282,24 @@ export default class QBChat {
                     dialogId: msg.dialog_id,
                     tag: items[2],
                     filters: items.splice(3)
-                }).then(
-                    record => {
-                        let text = `ID - ${record._id}
-                            Subscribed to "${record.tag}"\n `;
+                }).then(record => {
+                    let text = `ID - ${record._id}
+                        Subscribed to "${record.tag}"\n `;
 
-                        if (record.filters && record.filters.length) {
-                            text += `Filters: ${record.filters.join(', ')}.`;
-                        }
-
-                        this.sendResponse(text);
-                    },
-                    error => {
-                        this.sendFailInfo(error);
+                    if (record.filters && record.filters.length) {
+                        text += `Filters: ${record.filters.join(', ')}.`;
                     }
-                );
+
+                    this.sendResponse(text);
+                }).catch(error => {
+                    this.sendFailInfo(error);
+                });
             },
 
             sendResponseToUnsubscribe() {
-                self.qbData.unsubscribe(dialogId, items[2]).then(
-                    record => this.sendResponseToList(),
-                    error => this.sendFailInfo(error)
-                );
+                self.qbData.unsubscribe(msg.dialog_id, items.slice(2).join(','))
+                    .then(result => this.sendResponseToList())
+                    .catch(error => this.sendFailInfo(error));
             },
 
             sendResponseToLast() {
