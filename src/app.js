@@ -3,27 +3,42 @@ import QBChat from './QB_modules/QBChat';
 import cron from 'node-cron';
 import CONFIG from '../config';
 
-const qbChat = new QBChat();
-const stackoverflow = new stackexchange({version: 2.2});
-
 class App {
     constructor() {
-        this.startTask();
+        this.stackoverflow = new stackexchange({version: 2.2});
+        this.qbChat = new QBChat();
+        this.qbData = this.qbChat.qbData;
+        this.qbDialog = this.qbChat.qbDialog;
 
-        cron.schedule(`*/${CONFIG.taskRepeatTime} * * * *`, () => {
-            this.startTask();
-        },  true);
+        this.qbChat.connect().then(result => {
+            this.qbDialog.list();
+            this.qbChat.qbListeners();
+
+            cron.schedule(`*/${CONFIG.taskRepeatTime} * * * *`, () => {
+                this.startTask();
+            },  true);
+        });
+
     }
 
     startTask() {
-        this.listPosts()
-            .then(posts => {
-                posts.forEach(post => {
-                    // console.log('tags: ', post.tags);
-                })
+        this.qbData.getAllRecordsTags()
+            .then(tags => {
+                tags.forEach(tag => {
+                    this.listPosts({tag: tag})
+                        .then(posts => {
+                            this.qbData.getRecordsByTag(tag)
+                                .then(records => {
+                                    this.notificateSubscribedDialogs(records, posts);
+                                });
+                        })
+                        .catch(error => {
+                            console.log('error: ', error);
+                        });
+                });
             })
-            .catch(error => {
-                console.log('error: ', error);
+            .catch(err => {
+                console.log('err: ', err);
             });
     }
 
@@ -42,7 +57,7 @@ class App {
                 order: 'desc'
             };
 
-            stackoverflow.questions.questions(filters, (err, res) => {
+            this.stackoverflow.questions.questions(filters, (err, res) => {
                 if (res) {
                     let posts = results.concat(res.items);
 
@@ -64,6 +79,38 @@ class App {
         });
     }
 
+    notificateSubscribedDialogs(records, posts) {
+        records.forEach(record => {
+            posts.forEach(post => {
+                if (App.isFilteredAndValid(record.filters, post.tags)) {
+                    QBChat.sendMessage({
+                        to: this.qbDialog.getRecipientJid(record.dialogId),
+                        type: this.qbDialog.getTypeOfChat(record.dialogId),
+                        post: post,
+                        dialogId: record.dialogId
+                    });
+                }
+            });
+        });
+    }
+
+    static isFilteredAndValid(filters, tags) {
+        let result = !filters;
+
+        if (!result) {
+            top:
+            for (let i = 0; i < filters.length; i++) {
+                for (let j = 0; j < tags.length; j++) {
+                    if (filters[i] === tags[j]) {
+                        result = true;
+                        break top;
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
 }
 
 new App();

@@ -1,5 +1,5 @@
 export default {
-    taskRepeatTime: 60, // minutes
+    taskRepeatTime: 30, // minutes
     stackoverflow: {
         key: '*1PeMRfvryE0zEHbx)AbKg((',
         pagesize: 100 // max count is 100

@@ -5,13 +5,6 @@ import CONFIG from '../../config';
 
 export default class QBChat {
     constructor() {
-        this.user = {
-            login: CONFIG.quickblox.bot.login,
-            password: CONFIG.quickblox.bot.password,
-            id: CONFIG.quickblox.bot.id,
-            token: ''
-        };
-
         QB.init(
             CONFIG.quickblox.appId,
             CONFIG.quickblox.authKey,
@@ -19,13 +12,14 @@ export default class QBChat {
             CONFIG.quickblox.config
         );
 
-        this.connect()
-            .then(result => {
-                this.qbData = new QBData(CONFIG.quickblox.dataClassName);
-                this.qbDialog = new QBDialog(this.user.id);
+        this.user = {
+            login: CONFIG.quickblox.bot.login,
+            password: CONFIG.quickblox.bot.password,
+            id: CONFIG.quickblox.bot.id
+        };
 
-                this.qbListeners();
-            });
+        this.qbDialog = new QBDialog();
+        this.qbData = new QBData();
     }
 
     connect() {
@@ -35,11 +29,9 @@ export default class QBChat {
                 'password': this.user.password
             }, (error, session) => {
                 if (session) {
-                    this.user.token = session.token;
-
                     QB.chat.connect({
                         'userId': this.user.id,
-                        'password': this.user.token
+                        'password': session.token
                     }, (err, result) => {
                         if (err) {
                             reject(err);
@@ -63,6 +55,10 @@ export default class QBChat {
 
     static sendMessage(params) {
         const time = Math.floor(Date.now() / 1000);
+
+        if (params.post) {
+            params.text = `New activity: "${params.post.title}". ${params.post.link}`;
+        }
 
         let msg = {
             'type': params.type,
@@ -124,10 +120,6 @@ export default class QBChat {
                     answer.sendResponseToUnsubscribe();
                     break;
 
-                case '/last':
-                    answer.sendResponseToLast();
-                    break;
-
                 default:
                     answer.sendDefaultResponse();
                     break;
@@ -167,10 +159,8 @@ export default class QBChat {
                 break;
 
             case '7':
-                this.qbDialog.remove(params).then(dialogId => {
-                    console.log(dialogId);
-                    this.qbData.unsubscribe(dialogId, 'all')
-                });
+                this.qbDialog.remove(params)
+                    .then(dialogId => this.qbData.unsubscribe(dialogId, 'all'));
                 break;
 
             default:
@@ -178,17 +168,10 @@ export default class QBChat {
         }
     }
 
-    buildMessage(feedEntry) {
-        return `New activity: ${feedEntry.title}. ${feedEntry.link}`;
-    }
-
-    fire() {
-
-    }
-
     answerManager(msg) {
         const self = this,
-            items = msg.body.trim()
+              items = msg.body.trim()
+                            .toLowerCase()
                             .replace(/,/gi, ' ')
                             .replace(/ {1,}/g,' ')
                             .split(' ');
@@ -261,9 +244,8 @@ export default class QBChat {
                     @so /help - all commands list;
                     @so /kick - kick bot from the current group chat;
                     @so /list - get current tags' list;
-                    @so /subscribe <subscription> <...filters> - subscribe on main tag.
-                    @so /unsubscribe <...IDs> - unsubscribe from main tag;
-                    @so /last - get last information from StackOverfrow;`;
+                    @so /subscribe <subscription> <...filters> - subscribe on main tag;
+                    @so /unsubscribe <ID/IDs/all> - unsubscribe from tag by ID/IDs or from all.`;
 
                 this.sendResponse(text);
             },
@@ -273,7 +255,8 @@ export default class QBChat {
                     this.sendResponse('Command "@so /kick" uses only in group chat');
                 } else {
                     this.sendResponse('Goodbye! Have a good day!');
-                    self.qbDialog.remove({'_id': msg.dialog_id});
+                    self.qbDialog.remove({'_id': msg.dialog_id})
+                        .then(dialogId => self.qbData.unsubscribe(dialogId, 'all'));
                 }
             },
 
@@ -300,13 +283,6 @@ export default class QBChat {
                 self.qbData.unsubscribe(msg.dialog_id, items.slice(2).join(','))
                     .then(result => this.sendResponseToList())
                     .catch(error => this.sendFailInfo(error));
-            },
-
-            sendResponseToLast() {
-                self.qbData.getAllRecordsTags().then(
-                    tags => this.sendResponse(`ALL SUBSCRIPTIONS: [ ${tags.join(', ')} ]`),
-                    error => this.sendFailInfo(error)
-                );
             }
         };
     }

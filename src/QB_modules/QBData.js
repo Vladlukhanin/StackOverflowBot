@@ -1,8 +1,9 @@
 import QB from 'quickblox';
+import CONFIG from '../../config';
 
 export default class QBData {
-    constructor(dataClassName) {
-        this.dataClassName = dataClassName;
+    constructor() {
+        this.dataClassName = CONFIG.quickblox.dataClassName;
     }
 
     subscribe(params) {
@@ -28,14 +29,10 @@ export default class QBData {
                             _ids.push(record._id)
                         });
 
-                        this.removeRecords(_ids);
+                        return this.removeRecords(_ids);
                     })
-                    .then(result => {
-                        resolve(result);
-                    })
-                    .catch(error => {
-                        reject(error);
-                    });
+                    .then(result => resolve(result))
+                    .catch(error => reject(error));
             } else {
                 this.removeRecords(params)
                     .then(results => resolve(results))
@@ -97,6 +94,14 @@ export default class QBData {
 
             return [...items];
         }
+    }
+
+    getRecordsByTag(tag) {
+        return new Promise((resolve, reject) => {
+            this.listRecords({tag: tag})
+                .then(records => resolve(records))
+                .catch(error => reject(error));
+        });
     }
 
     removeRecords(params) {

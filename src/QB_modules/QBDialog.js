@@ -1,13 +1,12 @@
 import QB from 'quickblox';
 import QBChat from './QBChat';
+import CONFIG from '../../config';
 
 export default class QBDialog {
-    constructor(selfUserId) {
-        this.userId = selfUserId;
+    constructor() {
+        this.userId = CONFIG.quickblox.bot.id;
         this.userDialogsAssotiation = {};
         this.recipientJid = {};
-
-        this.list();
     }
 
     list(skip) {
@@ -54,40 +53,50 @@ export default class QBDialog {
     }
 
     remove(params) {
-        function sayGoodbyeAndRemove(dialog) {
+        const _sayGoodbye = function(dialog) {
             return new Promise((resolve, reject) => {
-                if (+dialog.type === 2) {
-                    QBChat.sendMessage({
-                        to: this.getRecipientJid(dialog._id),
-                        type: 'groupchat',
-                        text: 'Notification message',
-                        dialogId: dialog._id,
-                        notification_type: '2',
-                        current_occupant_ids: dialog.occupants_ids.join(),
-                        deleted_occupant_ids: this.userId,
-                        dialog_update_info: 3
-                    });
-                } else if (+dialog.type === 3) {
-                    const id = QB.chat.helpers.getRecipientId(dialog.occupants_ids, this.userId);
+                try {
+                    if (+dialog.type === 2) {
+                        QBChat.sendMessage({
+                            to: this.getRecipientJid(dialog._id),
+                            type: this.getTypeOfChat(dialog._id),
+                            text: 'Notification message',
+                            dialogId: dialog._id,
+                            notification_type: '2',
+                            current_occupant_ids: dialog.occupants_ids.join(),
+                            deleted_occupant_ids: this.userId,
+                            dialog_update_info: 3
+                        });
+                    } else if (+dialog.type === 3) {
+                        const id = QB.chat.helpers.getRecipientId(dialog.occupants_ids, this.userId);
 
-                    QBChat.sendMessage({
-                        to: this.getRecipientJid(dialog._id),
-                        type: 'chat',
-                        text: 'Contact request',
-                        dialogId: dialog._id,
-                        notification_type: '7'
-                    });
+                        QBChat.sendMessage({
+                            to: this.getRecipientJid(dialog._id),
+                            type: this.getTypeOfChat(dialog._id),
+                            text: 'Contact request',
+                            dialogId: dialog._id,
+                            notification_type: '7'
+                        });
 
-                    this.deleteUserDialogsAssotiation(id);
+                        this.deleteUserDialogsAssotiation(id);
+                    }
+
+                    this.deleteRecipientJid(dialog._id);
+
+                    resolve(dialog._id);
+                } catch (e) {
+                    reject(e);
                 }
+            });
+        };
 
-                this.deleteRecipientJid(dialog._id);
-
-                QB.chat.dialog.delete(dialog._id, (err, res) => {
-                    if (res) {
-                        resolve(dialog._id);
-                    } else {
+        const _removeDialog = function(dialogId) {
+            return new Promise((resolve, reject) => {
+                QB.chat.dialog.delete(dialogId, (err) => {
+                    if (err) {
                         reject(err);
+                    } else {
+                        resolve(dialogId);
                     }
                 });
             });
@@ -95,17 +104,10 @@ export default class QBDialog {
 
         return new Promise((resolve, reject) => {
             this.get(params)
-                .then(result => {
-                    sayGoodbyeAndRemove.call(this, result);
-                })
-                .then(id => {
-                    console.log('sayGoodbyeAndRemove id', id);
-                    resolve(id)
-                })
-                .catch(error => {
-                    console.log('sayGoodbyeAndRemove error', error);
-                    reject(error)
-                });
+                .then(result => { return _sayGoodbye.call(this, result); })
+                .then(dialogId => { return _removeDialog(dialogId); })
+                .then(dialogId => resolve(dialogId))
+                .catch(error => reject(error));
         });
     }
 
@@ -121,7 +123,7 @@ export default class QBDialog {
 
                 QBChat.sendMessage({
                     to: this.getRecipientJid(dialog._id),
-                    type: 'chat',
+                    type: this.getTypeOfChat(dialog._id),
                     text: 'Contact request',
                     dialogId: dialog._id,
                     notification_type: '5'
@@ -129,15 +131,17 @@ export default class QBDialog {
 
                 QBChat.sendMessage({
                     to: this.getRecipientJid(dialog._id),
-                    type: 'chat',
+                    type: this.getTypeOfChat(dialog._id),
                     text: 'Hello! Use "@so /help" to get all commands list.',
                     dialogId: dialog._id
                 });
             } else if (+dialog.type === 2) {
+                this.setRecipientJid(dialog._id, dialog.xmpp_room_jid);
+
                 QB.chat.muc.join(this.getRecipientJid(dialog._id), () => {
                     QBChat.sendMessage({
                         to: this.getRecipientJid(dialog._id),
-                        type: 'groupchat',
+                        type: this.getTypeOfChat(dialog._id),
                         text: 'Hello everybody! Use "@so /help" to get all commands list.',
                         dialogId: dialog._id
                     });
@@ -161,11 +165,17 @@ export default class QBDialog {
     setRecipientJid(dialogId, jidOrId) {
         switch (typeof jidOrId) {
             case 'number':
-                this.recipientJid[dialogId] = QB.chat.helpers.getUserJid(jidOrId, null);
+                this.recipientJid[dialogId] = {
+                    jid: QB.chat.helpers.getUserJid(jidOrId, null),
+                    type: 'chat'
+                };
                 break;
 
             case 'string':
-                this.recipientJid[dialogId] = jidOrId;
+                this.recipientJid[dialogId] = {
+                    jid: jidOrId,
+                    type: 'groupchat'
+                };
                 break;
 
             default:
@@ -174,7 +184,11 @@ export default class QBDialog {
     }
 
     getRecipientJid(dialogId) {
-        return this.recipientJid[dialogId];
+        return this.recipientJid[dialogId].jid;
+    }
+
+    getTypeOfChat(dialogId) {
+        return this.recipientJid[dialogId].type;
     }
 
     deleteRecipientJid(dialogId) {
