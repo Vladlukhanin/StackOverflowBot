@@ -1,11 +1,11 @@
 {
   "name": "stackoverflow_tags_trigger-slack",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "StackOverflow tags trigger service for Slack",
   "main": "index.js",
   "scripts": {
     "start": "rimraf ./dist && babel -d ./dist ./src -s",
-    "run": "node index.js"
+    "run": "pm2 start index.js"
   },
   "repository": {
     "type": "git",
@@ -21,10 +21,9 @@
   "dependencies": {
     "babel": "^6.23.0",
     "babel-core": "^6.25.0",
-    "feedparser": "^1.1.6",
     "node-cron": "^1.2.0",
+    "pm2": "^2.5.0",
     "quickblox": "^2.6.0",
-    "request": "^2.81.0",
     "rimraf": "^2.6.1",
     "stackexchange": "^0.4.0"
   },
